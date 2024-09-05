@@ -56,8 +56,25 @@ def processar_listagens():
 
                         time.sleep(3)  # Ajuste conforme necessário
 
-                        # Coleta os detalhes da página atual (adapte a função conforme necessário)
+                        # Muda para a nova aba aberta
+                        driver.switch_to.window(driver.window_handles[-1])
+
+                        # Espera e fecha o pop-up "Close"
+                        try:
+                            close_button = WebDriverWait(driver, 30).until(
+                                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Close')]"))
+                            )
+                            close_button.click()
+                            print("Pop-up fechado com sucesso.")
+                        except TimeoutException:
+                            print("Botão 'Close' do pop-up não encontrado a tempo.")
+
+                        # Coleta os detalhes da página atual
                         coletar_detalhes()
+
+                        # Fecha a nova aba e volta para a original
+                        driver.close()
+                        driver.switch_to.window(driver.window_handles[0])
 
                     except TimeoutException:
                         print("Botão 'View on DataScoutPro' não encontrado a tempo.")
