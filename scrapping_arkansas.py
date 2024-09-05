@@ -3,18 +3,39 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException, ElementNotInteractableException, StaleElementReferenceException
+from bs4 import BeautifulSoup
 import time
+import csv
+import signal
+import sys
 
 options = webdriver.ChromeOptions()
 options.add_argument("--disable-popup-blocking")
-options.add_argument("--blink-settings=imagesEnabled=false")  
+options.add_argument("--headless")  
+options.add_argument("--blink-settings=imagesEnabled=false")
 driver = webdriver.Chrome(options=options)
+
+
+dados_coletados = []
 
 driver.get("https://auction.cosl.org/Auctions/ListingsView")
 
 def clicar_no_elemento_com_javascript(elemento):
-    """Clica em um elemento usando JavaScript para evitar problemas de visibilidade."""
     driver.execute_script("arguments[0].scrollIntoView(); arguments[0].click();", elemento)
+
+
+def salvar_dados_em_csv(dados, nome_arquivo='dados_coletados.csv'):
+    if not dados:
+        print("Nenhum dado coletado para salvar.")
+        return
+
+
+    chaves = dados[0].keys()
+    with open(nome_arquivo, 'w', newline='', encoding='utf-8') as arquivo_csv:
+        escritor_csv = csv.DictWriter(arquivo_csv, fieldnames=chaves)
+        escritor_csv.writeheader()
+        escritor_csv.writerows(dados)
+    print(f"Dados salvos em {nome_arquivo}.")
 
 def processar_listagens():
     try:
@@ -34,7 +55,7 @@ def processar_listagens():
                     print(f"Processando o item {index + 1} de {len(bid_buttons)}")
                     
                     clicar_no_elemento_com_javascript(bid_button)  
-                    time.sleep(3)  
+                    time.sleep(3) 
 
                     try:
                         view_button = WebDriverWait(driver, 30).until(
@@ -82,7 +103,6 @@ def processar_listagens():
                     )
                     continue
 
-
             try:
                 next_button = driver.find_element(By.XPATH, "//a[contains(@class, 'next-page')]")  
                 if next_button.is_displayed() and next_button.is_enabled():
@@ -101,11 +121,34 @@ def processar_listagens():
 
 def coletar_detalhes():
     try:
-        detalhes = driver.page_source 
-        print("Detalhes coletados com sucesso.")
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'html.parser')
+        
+        tables = soup.find_all('div', class_='table-responsive')
+        if tables:
+            for i, table in enumerate(tables):
+                rows = table.find_all('tr')
+                for row in rows:
+                    data = [td.get_text(strip=True) for td in row.find_all('td')]
+                    if data:
+                        dados_coletados.append({"Tabela": i + 1, "Dados": data})
+        else:
+            print("DataScoutPro não possui detalhes desta propriedade !")
+        
     except Exception as e:
         print(f"Erro ao coletar detalhes: {e}")
 
+def interromper_script(signal, frame):
+    print("\nInterrupção recebida! Salvando dados coletados...")
+    salvar_dados_em_csv(dados_coletados)
+    print("Dados salvos. Encerrando o script.")
+    driver.quit()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, interromper_script)
+
 processar_listagens()
+
+salvar_dados_em_csv(dados_coletados)
 
 driver.quit()
