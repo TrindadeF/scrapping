@@ -44,6 +44,9 @@ def processar_listagens():
                 bid_buttons = WebDriverWait(driver, 30).until(
                     EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
                 )
+
+                bid_buttons = [btn for btn in bid_buttons if btn.is_displayed() and btn.is_enabled()]
+
             except TimeoutException:
                 print("Não foi possível carregar os botões 'Bid'. Encerrando o processo.")
                 break
@@ -51,14 +54,21 @@ def processar_listagens():
             for index in range(len(bid_buttons)):
                 try:
                     bid_buttons = driver.find_elements(By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1")
+                    bid_buttons = [btn for btn in bid_buttons if btn.is_displayed() and btn.is_enabled()]
+                    
+                    if index >= len(bid_buttons):
+                        print(f"Índice {index} fora do alcance após a recarga dos botões. Pulando para o próximo.")
+                        continue
+
                     bid_button = bid_buttons[index]
+                    
                     print(f"Processando o item {index + 1} de {len(bid_buttons)}")
                     
                     clicar_no_elemento_com_javascript(bid_button)  
                     time.sleep(3) 
 
                     try:
-                        view_button = WebDriverWait(driver, 30).until(
+                        view_button = WebDriverWait(driver, 20).until(
                             EC.presence_of_element_located((By.XPATH, "//a[@title='View on DataScoutPro']"))
                         )
 
@@ -74,7 +84,7 @@ def processar_listagens():
                         driver.switch_to.window(driver.window_handles[-1])
 
                         try:
-                            close_button = WebDriverWait(driver, 30).until(
+                            close_button = WebDriverWait(driver, 20).until(
                                 EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Close')]"))
                             )
                             close_button.click()
@@ -91,7 +101,7 @@ def processar_listagens():
                         print("Botão 'View on DataScoutPro' não encontrado a tempo.")
 
                     driver.back()
-                    WebDriverWait(driver, 30).until(
+                    WebDriverWait(driver, 20).until(
                         EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
                     )
 
@@ -104,7 +114,7 @@ def processar_listagens():
                     continue
 
             try:
-                next_button = driver.find_element(By.XPATH, "//a[contains(@class, 'next-page')]")  
+                next_button = driver.find_element(By.XPATH, "//a[contains(@class, 'Go to the next page')]")  
                 if next_button.is_displayed() and next_button.is_enabled():
                     print("Indo para a próxima página de listagens...")
                     clicar_no_elemento_com_javascript(next_button)
