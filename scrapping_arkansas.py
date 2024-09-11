@@ -170,40 +170,72 @@ def processar_listagens():
     except Exception as e:
         print(f"Erro ao processar as listagens: {e}")
 
+
 def coletar_detalhes():
     try:
         page_source = driver.page_source
         soup = BeautifulSoup(page_source, 'html.parser')
         
-        # Encontrar as tabelas que contêm os dados necessários
-        tables = soup.find_all('div', class_='table-responsive')
+        secoes_desejadas = ["Property Owner", "Property Information"]
         
-        if tables:
-            for table in tables:
-                rows = table.find_all('tr')
-                dados_item = {}
+        dados_item = {}
+
+        for secao_nome in secoes_desejadas:
+            div_secao = soup.find('div', string=secao_nome)
+            
+            if div_secao:
+                tabela = div_secao.find_next('table')
                 
-                for row in rows:
-                    cells = row.find_all('td')
+                if tabela:
+                    rows = tabela.find_all('tr')
                     
-                    # Confere se existem exatamente duas colunas (chave e valor)
-                    if len(cells) == 2:
-                        chave = cells[0].get_text(strip=True).replace(':', '')
-                        valor = cells[1].get_text(strip=True)
+                    for row in rows:
+                        cells = row.find_all('td')
                         
-                        # Se a chave ou o valor não forem válidos, pula para a próxima iteração
-                        if not chave or not valor:
-                            continue
-                        
-                        # Adiciona apenas se a chave não existir no dicionário
-                        if chave not in dados_item:
-                            dados_item[chave] = valor
+                        if len(cells) == 2:
+                            chave = cells[0].get_text(strip=True).replace(':', '')
+                            valor = cells[1].get_text(strip=True)
+                            
+                            if chave and chave not in dados_item:
+                                dados_item[chave] = valor
+                else:
+                    print(f"Tabela não encontrada para a seção: {secao_nome}")
+            else:
+                print(f"Div não encontrada para a seção: {secao_nome}")
+
+        div_secao_market = soup.find('div', string="Market and Assessed Values")
+        
+        if div_secao_market:
+            tabela_market = div_secao_market.find_next('table')
+            
+            if tabela_market:
+                thead = tabela_market.find('thead')
+                if thead:
+                    headers = [th.get_text(strip=True) for th in thead.find_all('td')]
                 
-                # Adiciona o item aos dados coletados apenas se for válido
-                if dados_item:
-                    dados_coletados.append(dados_item)
+                tbody = tabela_market.find('tbody')
+                if tbody:
+                    rows = tbody.find_all('tr')
+                    
+                    for row in rows:
+                        cells = row.find_all('td')
+                        
+                        if len(cells) == len(headers):
+                            for index, header in enumerate(headers):
+                                chave = header
+                                valor = cells[index].get_text(strip=True)
+                                
+                                if chave and chave not in dados_item:
+                                    dados_item[chave] = valor
+            else:
+                print("Tabela não encontrada para a seção: Market and Assessed Values")
         else:
-            print("Nenhuma tabela de detalhes encontrada na página.")
+            print("Div não encontrada para a seção: Market and Assessed Values")
+
+        if dados_item:
+            dados_coletados.append(dados_item)
+        else:
+            print("Nenhum dado coletado das seções especificadas.")
         
     except Exception as e:
         print(f"Erro ao coletar detalhes: {e}")
@@ -211,7 +243,7 @@ def coletar_detalhes():
 
 def interromper_script(signal, frame):
     print("\nInterrupção recebida! Salvando dados coletados...")
-    salvar_em_google_sheets(dados_coletados, "Scrapping Test", "Arkansas")
+    salvar_em_google_sheets(dados_coletados, " Taxes Deed Research GoogleSheet ", "Arkansas")
     print("Dados salvos. Encerrando o script.")
     driver.quit()
     sys.exit(0)
@@ -220,6 +252,6 @@ signal.signal(signal.SIGINT, interromper_script)
 
 processar_listagens()
 
-salvar_em_google_sheets(dados_coletados, "Scrapping Test", "Arkansas")
+salvar_em_google_sheets(dados_coletados, " Taxes Deed Research GoogleSheet ", "Arkansas")
 
 driver.quit()
