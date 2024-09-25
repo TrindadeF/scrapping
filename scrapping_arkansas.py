@@ -7,14 +7,10 @@ from bs4 import BeautifulSoup
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 import time
-import csv
 import gspread
 import signal
 import sys
 import os
-
-
-load_dotenv()
 
 
 options = webdriver.ChromeOptions()
@@ -34,7 +30,7 @@ def autenticar_google_sheets():
         "type": os.getenv("GOOGLE_TYPE"),
         "project_id": os.getenv("GOOGLE_PROJECT_ID"),
         "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
-        "private_key": os.getenv("GOOGLE_PRIVATE_KEY").replace("\\n", "\n"),  
+        "private_key": os.getenv("GOOGLE_PRIVATE_KEY"),
         "client_email": os.getenv("GOOGLE_CLIENT_EMAIL"),
         "client_id": os.getenv("GOOGLE_CLIENT_ID"),
         "auth_uri": os.getenv("GOOGLE_AUTH_URI"),
@@ -69,7 +65,7 @@ def salvar_em_google_sheets(data, nome_planilha, nome_aba):
             headers = list(data[0].keys())  
             valores = [list(item.values()) for item in data]  
 
-            aba.clear()  
+            aba.clear()
             aba.append_row(headers) 
             aba.append_rows(valores)  
             
@@ -77,7 +73,7 @@ def salvar_em_google_sheets(data, nome_planilha, nome_aba):
     except Exception as e:
         print(f"Erro ao salvar dados no Google Sheets: {e}")
 
-
+    
 def processar_listagens():
     try:
         while True: 
@@ -102,14 +98,14 @@ def processar_listagens():
                         continue
 
                     bid_button = bid_buttons[index]
+                    clicar_no_elemento_com_javascript(bid_button) 
                     
                     print(f"Processando o item {index + 1} de {len(bid_buttons)}")
                     
-                    clicar_no_elemento_com_javascript(bid_button)  
                     time.sleep(3) 
 
                     try:
-                        view_button = WebDriverWait(driver, 25).until(
+                        view_button = WebDriverWait(driver, 35).until(
                             EC.presence_of_element_located((By.XPATH, "//a[@title='View on DataScoutPro']"))
                         )
 
@@ -118,7 +114,7 @@ def processar_listagens():
                             print("Botão 'View on DataScoutPro' clicado com Selenium.")
                         except (ElementClickInterceptedException, ElementNotInteractableException):
                             print("Falha ao clicar no botão com Selenium, tentando com JavaScript.")
-                            clicar_no_elemento_com_javascript(view_button)  
+        
 
                         time.sleep(3) 
 
@@ -170,6 +166,39 @@ def processar_listagens():
     except Exception as e:
         print(f"Erro ao processar as listagens: {e}")
 
+def coletar_primeiro_detalhe():
+    try:
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'html.parser')
+
+        dados_item = {}  
+
+        dl_elements = soup.find_all('dl', class_='row row-border-bottom p-1 m-1')
+
+    
+        if len(dl_elements) >= 2:
+            segundo_dl = dl_elements[1]  
+
+            dt_elements = segundo_dl.find_all('dt')  
+            dd_elements = segundo_dl.find_all('dd')  
+
+            for dt, dd in zip(dt_elements, dd_elements):
+                chave = dt.get_text(strip=True) 
+                valor = dd.get_text(strip=True) 
+                
+                if chave and chave not in dados_item:
+                    dados_item[chave] = valor
+            if dados_item:   
+                print("Dados coletados com sucesso !")
+                dados_coletados.append(dados_item)
+            else: 
+                print("Nenhum detalhe encontrado na primeira pagina. ")
+
+        else:
+            print("O segunda tabela não foi encontrada.")
+
+    except Exception as e:
+        print(f"Erro ao coletar o primeiro detalhe: {e}")
 
 def coletar_detalhes():
     try:
