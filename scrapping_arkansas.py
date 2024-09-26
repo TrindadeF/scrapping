@@ -63,15 +63,37 @@ def salvar_em_google_sheets(data, nome_planilha, nome_aba):
         
         if data:
             headers = list(data[0].keys())  
-            valores = [[item.get(header, "N/A") for header in headers] for item in data]  
-
-            aba.clear()
-            aba.append_row(headers) 
-            aba.append_rows(valores)  
+            valores = [list(item.values()) for item in data]  
             
-            print(f"Dados enviados para a aba '{nome_aba}' na planilha '{nome_planilha}' com sucesso.")
+            existing_data = aba.get_all_values()
+            
+            if not existing_data:  
+                aba.append_row(headers)
+                print("Cabeçalhos adicionados à planilha.")
+            
+            else:
+                existing_headers = existing_data[0]  
+
+                if headers != existing_headers:
+                    print("Cabeçalhos diferentes detectados! A planilha contém:", existing_headers)
+
+
+            existing_records = set(tuple(row) for row in existing_data[1:])  
+        
+            new_data = []
+            for item in valores:
+                if tuple(item) not in existing_records:
+                    new_data.append(item)
+
+            if new_data:
+                aba.append_rows(new_data)
+                print(f"Dados novos enviados para a aba '{nome_aba}' na planilha '{nome_planilha}' com sucesso.")
+            else:
+                print("Nenhum dado novo para adicionar; todos os dados já estão na planilha.")
+    
     except Exception as e:
         print(f"Erro ao salvar dados no Google Sheets: {e}")
+
 
     
 def processar_listagens():
