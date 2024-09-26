@@ -27,17 +27,17 @@ driver.get("https://auction.cosl.org/Auctions/ListingsView")
 def autenticar_google_sheets():
     
     credentials_info = {
-        "type": os.getenv("GOOGLE_TYPE"),
-        "project_id": os.getenv("GOOGLE_PROJECT_ID"),
-        "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
-        "private_key": os.getenv("GOOGLE_PRIVATE_KEY"),
-        "client_email": os.getenv("GOOGLE_CLIENT_EMAIL"),
-        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-        "auth_uri": os.getenv("GOOGLE_AUTH_URI"),
-        "token_uri": os.getenv("GOOGLE_TOKEN_URI"),
-        "auth_provider_x509_cert_url": os.getenv("GOOGLE_AUTH_PROVIDER_CERT_URL"),
-        "client_x509_cert_url": os.getenv("GOOGLE_CLIENT_CERT_URL"),
-        "universe_domain": os.getenv("GOOGLE_UNIVERSE_DOMAIN")
+            "type": os.getenv("GOOGLE_TYPE"),
+            "project_id": os.getenv("GOOGLE_PROJECT_ID"),
+            "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
+            "private_key": os.getenv("GOOGLE_PRIVATE_KEY"),
+            "client_email": os.getenv("GOOGLE_CLIENT_EMAIL"),
+            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+            "auth_uri": os.getenv("GOOGLE_AUTH_URI"),
+            "token_uri": os.getenv("GOOGLE_TOKEN_URI"),
+            "auth_provider_x509_cert_url": os.getenv("GOOGLE_AUTH_PROVIDER_CERT_URL"),
+            "client_x509_cert_url": os.getenv("GOOGLE_CLIENT_CERT_URL"),
+            "universe_domain": os.getenv("GOOGLE_UNIVERSE_DOMAIN")
     }
 
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
@@ -63,7 +63,7 @@ def salvar_em_google_sheets(data, nome_planilha, nome_aba):
         
         if data:
             headers = list(data[0].keys())  
-            valores = [list(item.values()) for item in data]  
+            valores = [[item.get(header, "N/A") for header in headers] for item in data]  
 
             aba.clear()
             aba.append_row(headers) 
@@ -104,6 +104,8 @@ def processar_listagens():
                     
                     time.sleep(3) 
 
+                    dados_item = coletar_primeiro_detalhe()
+
                     try:
                         view_button = WebDriverWait(driver, 35).until(
                             EC.presence_of_element_located((By.XPATH, "//a[@title='View on DataScoutPro']"))
@@ -129,10 +131,13 @@ def processar_listagens():
                         except TimeoutException:
                             print("Botão 'Close' do pop-up não encontrado a tempo.")
 
-                        coletar_detalhes()
+                        dados_item_completo = coletar_detalhes(dados_item)
 
                         driver.close()
                         driver.switch_to.window(driver.window_handles[0])
+
+                        if dados_item_completo:
+                            dados_coletados.append(dados_item_completo)
 
                     except TimeoutException:
                         print("Botão 'View on DataScoutPro' não encontrado a tempo.")
@@ -190,7 +195,7 @@ def coletar_primeiro_detalhe():
                     dados_item[chave] = valor
             if dados_item:   
                 print("Dados coletados com sucesso !")
-                dados_coletados.append(dados_item)
+                return dados_item
             else: 
                 print("Nenhum detalhe encontrado na primeira pagina. ")
 
@@ -200,14 +205,13 @@ def coletar_primeiro_detalhe():
     except Exception as e:
         print(f"Erro ao coletar o primeiro detalhe: {e}")
 
-def coletar_detalhes():
+def coletar_detalhes(dados_item):
     try:
         page_source = driver.page_source
         soup = BeautifulSoup(page_source, 'html.parser')
         
         secoes_desejadas = ["Property Owner", "Property Information"]
-        
-        dados_item = {}
+    
 
         for secao_nome in secoes_desejadas:
             div_secao = soup.find('div', string=secao_nome)
@@ -262,9 +266,11 @@ def coletar_detalhes():
             print("Div não encontrada para a seção: Market and Assessed Values")
 
         if dados_item:
-            dados_coletados.append(dados_item)
+            print("Dados da segunda pagina coletdos com sucesso ! ")
+            return dados_item
         else:
             print("Nenhum dado coletado das seções especificadas.")
+            return dados_item
         
     except Exception as e:
         print(f"Erro ao coletar detalhes: {e}")
