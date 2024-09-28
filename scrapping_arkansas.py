@@ -15,14 +15,16 @@ import os
 
 options = webdriver.ChromeOptions()
 options.add_argument("--disable-popup-blocking")
-options.add_argument("--headless")  
+# options.add_argument("--headless")  
 options.add_argument("--blink-settings=imagesEnabled=false")
 driver = webdriver.Chrome(options=options)
 
 
+escolha_usuario = None  
 dados_coletados = []
 
 driver.get("https://auction.cosl.org/Auctions/ListingsView")
+
 
 def autenticar_google_sheets():
     
@@ -30,7 +32,7 @@ def autenticar_google_sheets():
             "type": os.getenv("GOOGLE_TYPE"),
             "project_id": os.getenv("GOOGLE_PROJECT_ID"),
             "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
-            "private_key": os.getenv("GOOGLE_PRIVATE_KEY"),
+            "private_key": os.getenv("GOOGLE_PRIVATE_KEY").replace("\\n", "\n"),  
             "client_email": os.getenv("GOOGLE_CLIENT_EMAIL"),
             "client_id": os.getenv("GOOGLE_CLIENT_ID"),
             "auth_uri": os.getenv("GOOGLE_AUTH_URI"),
@@ -70,12 +72,6 @@ def salvar_em_google_sheets(data, nome_planilha, nome_aba):
             if not existing_data:  
                 aba.append_row(headers)
                 print("Cabeçalhos adicionados à planilha.")
-            
-            else:
-                existing_headers = existing_data[0]  
-
-                if headers != existing_headers:
-                    print("Cabeçalhos diferentes detectados! A planilha contém:", existing_headers)
 
 
             existing_records = set(tuple(row) for row in existing_data[1:])  
@@ -95,103 +91,184 @@ def salvar_em_google_sheets(data, nome_planilha, nome_aba):
         print(f"Erro ao salvar dados no Google Sheets: {e}")
 
 
-    
-def processar_listagens():
+
+def processar_listagens(driver):
+    global escolha_usuario  
     try:
-        while True: 
-            try:
-                bid_buttons = WebDriverWait(driver, 40).until(
-                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
-                )
+        filtro_btn = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CLASS_NAME, "k-grid-filter"))
+        )
+        
+        driver.execute_script("arguments[0].click();", filtro_btn)
+        
+        try:
+            container_opcoes = WebDriverWait(driver, 10).until(
+                EC.visibility_of_element_located((By.CLASS_NAME, "k-multicheck-wrap"))
+            )
+        except Exception as e:
+            print("Erro ao esperar o container de opções:", e)
+            return
 
-                bid_buttons = [btn for btn in bid_buttons if btn.is_displayed() and btn.is_enabled()]
+        if container_opcoes:
+            print("Container de opções encontrado.")
+        else:
+            print("Container de opções não encontrado.")
+            return
+        
+        time.sleep(2)
 
-            except TimeoutException:
-                print("Não foi possível carregar os botões 'Bid'. Encerrando o processo.")
+        lista_opcoes = container_opcoes.find_elements(By.CLASS_NAME, "k-item")
+
+        if lista_opcoes:
+            print("Opções encontradas:")
+            for item in lista_opcoes:
+                label_text = item.find_element(By.TAG_NAME, "span").text
+                print(f"- {label_text}")
+        else:
+            print("Nenhuma opção foi encontrada dentro do container.")
+            return
+
+        escolha_usuario = input("Digite o nome do condado que deseja selecionar: ").strip().upper()
+
+        opcao_encontrada = None
+        for item in lista_opcoes:
+            label_text = item.find_element(By.TAG_NAME, "span").text.strip().upper()
+            if escolha_usuario in label_text:
+                opcao_encontrada = item
                 break
 
-            for index in range(len(bid_buttons)):
+        if opcao_encontrada:
+            checkbox = opcao_encontrada.find_element(By.TAG_NAME, "input")
+            driver.execute_script("arguments[0].click();", checkbox)
+
+            botao_filtrar = driver.find_element(By.CSS_SELECTOR, "button.k-primary")
+            driver.execute_script("arguments[0].click();", botao_filtrar)
+
+            time.sleep(3) 
+            
+            while True: 
                 try:
-                    bid_buttons = driver.find_elements(By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1")
+                    bid_buttons = WebDriverWait(driver, 40).until(
+                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
+                    )
                     bid_buttons = [btn for btn in bid_buttons if btn.is_displayed() and btn.is_enabled()]
-                    
-                    if index >= len(bid_buttons):
-                        print(f"Índice {index} fora do alcance após a recarga dos botões. Pulando para o próximo.")
-                        continue
 
-                    bid_button = bid_buttons[index]
-                    clicar_no_elemento_com_javascript(bid_button) 
-                    
-                    print(f"Processando o item {index + 1} de {len(bid_buttons)}")
-                    
-                    time.sleep(3) 
+                    for index in range(len(bid_buttons)):
+                        try:
+                            bid_button = bid_buttons[index]
+                            clicar_no_elemento_com_javascript(bid_button) 
+                            
+                            print(f"Processando o item {index + 1} de {len(bid_buttons)}")
+                            
+                            time.sleep(3) 
 
-                    dados_item = coletar_primeiro_detalhe()
+                            dados_item = coletar_primeiro_detalhe()
+
+                            try:
+                                view_button = WebDriverWait(driver, 35).until(
+                                    EC.presence_of_element_located((By.XPATH, "//a[@title='View on DataScoutPro']"))
+                                )
+                                view_button.click()
+                                print("Botão 'View on DataScoutPro' clicado com Selenium.")
+                                
+                                time.sleep(3) 
+
+                                driver.switch_to.window(driver.window_handles[-1])
+
+                                try:
+                                    close_button = WebDriverWait(driver, 25).until(
+                                        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Close')]"))
+                                    )
+                                    close_button.click()
+                                    print("Pop-up fechado com sucesso.")
+                                except TimeoutException:
+                                    print("Botão 'Close' do pop-up não encontrado a tempo.")
+
+                                dados_item_completo = coletar_detalhes(dados_item)
+
+                                driver.close()
+                                driver.switch_to.window(driver.window_handles[0])
+
+                                if dados_item_completo:
+                                    dados_coletados.append(dados_item_completo)
+
+                            except TimeoutException:
+                                print("Botão 'View on DataScoutPro' não encontrado a tempo.")
+
+                            driver.back()
+                            time.sleep(3)
+                            reaplicar_filtro(driver)
+
+                        except (TimeoutException, NoSuchElementException, ElementClickInterceptedException, StaleElementReferenceException) as e:
+                            print(f"Erro ao processar item {index + 1}: {e}")
+                            driver.back()
+                            reaplicar_filtro(driver)
+                            continue
 
                     try:
-                        view_button = WebDriverWait(driver, 35).until(
-                            EC.presence_of_element_located((By.XPATH, "//a[@title='View on DataScoutPro']"))
-                        )
-
-                        try:
-                            view_button.click()
-                            print("Botão 'View on DataScoutPro' clicado com Selenium.")
-                        except (ElementClickInterceptedException, ElementNotInteractableException):
-                            print("Falha ao clicar no botão com Selenium, tentando com JavaScript.")
-        
-
-                        time.sleep(3) 
-
-                        driver.switch_to.window(driver.window_handles[-1])
-
-                        try:
-                            close_button = WebDriverWait(driver, 25).until(
-                                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Close')]"))
-                            )
-                            close_button.click()
-                            print("Pop-up fechado com sucesso.")
-                        except TimeoutException:
-                            print("Botão 'Close' do pop-up não encontrado a tempo.")
-
-                        dados_item_completo = coletar_detalhes(dados_item)
-
-                        driver.close()
-                        driver.switch_to.window(driver.window_handles[0])
-
-                        if dados_item_completo:
-                            dados_coletados.append(dados_item_completo)
-
-                    except TimeoutException:
-                        print("Botão 'View on DataScoutPro' não encontrado a tempo.")
-
-                    driver.back()
-                    WebDriverWait(driver, 25).until(
-                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
-                    )
-
-                except (TimeoutException, NoSuchElementException, ElementClickInterceptedException, StaleElementReferenceException) as e:
-                    print(f"Erro ao processar item {index + 1}: {e}")
-                    driver.back()
-                    WebDriverWait(driver, 30).until(
-                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
-                    )
-                    continue
-
-            try:
-                next_button = driver.find_element(By.XPATH, "//a[contains(@class, 'Go to the next page')]")  
-                if next_button.is_displayed() and next_button.is_enabled():
-                    print("Indo para a próxima página de listagens...")
-                    clicar_no_elemento_com_javascript(next_button)
-                    time.sleep(3)
-                else:
-                    print("Fim das listagens.")
-                    break
-            except NoSuchElementException:
-                print("Botão 'Next' não encontrado. Fim das listagens.")
-                break  
+                        next_button = driver.find_element(By.XPATH, "//a[contains(@class, 'Go to the next page')]")  
+                        if next_button.is_displayed() and next_button.is_enabled():
+                            print("Indo para a próxima página de listagens...")
+                            clicar_no_elemento_com_javascript(next_button)
+                            time.sleep(3)
+                        else:
+                            print("Fim das listagens.")
+                            break
+                    except NoSuchElementException:
+                        print("Botão 'Next' não encontrado. Fim das listagens.")
+                        break  
+                except Exception as e:
+                    print(f"Erro ao encontrar o botão Bid: {e}")
+        else:
+            print(f"Opção '{escolha_usuario}' não encontrada nas listagens.")
 
     except Exception as e:
         print(f"Erro ao processar as listagens: {e}")
+
+
+def reaplicar_filtro(driver):
+    global escolha_usuario
+    if escolha_usuario:
+        try:
+            for _ in range(3):  
+                try:
+                    filtro_btn = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.CLASS_NAME, "k-grid-filter"))
+                    )
+                    driver.execute_script("arguments[0].click();", filtro_btn)
+                    break 
+                except TimeoutException:
+                    print("Botão de filtro não encontrado, tentando novamente...")
+                    time.sleep(1)  
+
+            container_opcoes = WebDriverWait(driver, 10).until(
+                EC.visibility_of_element_located((By.CLASS_NAME, "k-multicheck-wrap"))
+            )
+
+            lista_opcoes = container_opcoes.find_elements(By.CLASS_NAME, "k-item")
+
+            opcao_encontrada = None
+            for item in lista_opcoes:
+                label_text = item.find_element(By.TAG_NAME, "span").text.strip().upper()
+                if escolha_usuario in label_text:
+                    opcao_encontrada = item
+                    break
+
+            if opcao_encontrada:
+                checkbox = opcao_encontrada.find_element(By.TAG_NAME, "input")
+                driver.execute_script("arguments[0].click();", checkbox)
+
+                botao_filtrar = driver.find_element(By.CSS_SELECTOR, "button.k-primary")
+                driver.execute_script("arguments[0].click();", botao_filtrar)
+
+                time.sleep(6) 
+                print(f"Filtro reaplicado para a opção: {escolha_usuario}")
+            else:
+                print(f"Opção '{escolha_usuario}' não encontrada durante a reaplicação do filtro.")
+
+        except Exception as e:
+            print(f"Erro ao reaplicar o filtro: {e}")
+
 
 def coletar_primeiro_detalhe():
     try:
@@ -216,7 +293,7 @@ def coletar_primeiro_detalhe():
                 if chave and chave not in dados_item:
                     dados_item[chave] = valor
             if dados_item:   
-                print("Dados coletados com sucesso !")
+                print("Dados da primeira pagina coletados com sucesso !")
                 return dados_item
             else: 
                 print("Nenhum detalhe encontrado na primeira pagina. ")
@@ -307,7 +384,7 @@ def interromper_script(signal, frame):
 
 signal.signal(signal.SIGINT, interromper_script)
 
-processar_listagens()
+processar_listagens(driver)
 
 salvar_em_google_sheets(dados_coletados, " Taxes Deed Research GoogleSheet ", "Arkansas")
 
