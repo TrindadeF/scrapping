@@ -4,6 +4,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException, ElementNotInteractableException, StaleElementReferenceException
 from bs4 import BeautifulSoup
+from selenium.common.exceptions import StaleElementReferenceException
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 import time
@@ -15,7 +16,7 @@ import os
 
 options = webdriver.ChromeOptions()
 options.add_argument("--disable-popup-blocking")
-# options.add_argument("--headless")  
+options.add_argument("--headless")  
 options.add_argument("--blink-settings=imagesEnabled=false")
 driver = webdriver.Chrome(options=options)
 
@@ -196,7 +197,7 @@ def processar_listagens(driver):
                                 print("Botão 'View on DataScoutPro' não encontrado a tempo.")
 
                             driver.back()
-                            time.sleep(3)
+                            driver.refresh()
                             reaplicar_filtro(driver)
 
                         except (TimeoutException, NoSuchElementException, ElementClickInterceptedException, StaleElementReferenceException) as e:
@@ -225,49 +226,81 @@ def processar_listagens(driver):
     except Exception as e:
         print(f"Erro ao processar as listagens: {e}")
 
-
 def reaplicar_filtro(driver):
     global escolha_usuario
+
     if escolha_usuario:
         try:
-            for _ in range(3):  
-                try:
-                    filtro_btn = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.CLASS_NAME, "k-grid-filter"))
-                    )
-                    driver.execute_script("arguments[0].click();", filtro_btn)
-                    break 
-                except TimeoutException:
-                    print("Botão de filtro não encontrado, tentando novamente...")
-                    time.sleep(1)  
-
-            container_opcoes = WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.CLASS_NAME, "k-multicheck-wrap"))
+            # Localizar o botão de filtro e clicar
+            filtro_btn = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CLASS_NAME, "k-grid-filter"))
             )
+            driver.execute_script("arguments[0].click();", filtro_btn)
 
+            time.sleep(2)  # Pequeno delay para garantir o carregamento do DOM
+
+            # Esperar o container de opções ficar visível
+            container_opcoes = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".k-reset.k-multicheck-wrap"))
+            )
+            print("Container de opções carregado.")
+
+            # Localizar todas as opções disponíveis
             lista_opcoes = container_opcoes.find_elements(By.CLASS_NAME, "k-item")
+            print(f"Total de opções encontradas: {len(lista_opcoes)}")
 
-            opcao_encontrada = None
+            opcao_encontrada = False
+
+            # Procurar a opção desejada pelo valor do checkbox
             for item in lista_opcoes:
-                label_text = item.find_element(By.TAG_NAME, "span").text.strip().upper()
-                if escolha_usuario in label_text:
-                    opcao_encontrada = item
-                    break
+                try:
+                    checkbox = item.find_element(By.CSS_SELECTOR, "input.k-checkbox")
+                    valor_checkbox = checkbox.get_attribute("value").strip().upper()
 
-            if opcao_encontrada:
-                checkbox = opcao_encontrada.find_element(By.TAG_NAME, "input")
-                driver.execute_script("arguments[0].click();", checkbox)
+                    if valor_checkbox == escolha_usuario.upper():
+                        opcao_encontrada = True
+                        print(f"Selecionando a opção: {valor_checkbox}")
 
-                botao_filtrar = driver.find_element(By.CSS_SELECTOR, "button.k-primary")
-                driver.execute_script("arguments[0].click();", botao_filtrar)
+                        # Redescobrir o elemento antes de clicar para evitar o erro de "stale element"
+                        checkbox = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, f"input[value='{valor_checkbox}']"))
+                        )
+                        
+                        # Clicar no checkbox
+                        driver.execute_script("arguments[0].click();", checkbox)
+                        
+                        # Clicar no botão de aplicar filtro
+                        botao_filtrar = WebDriverWait(driver, 10).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "button.k-primary"))
+                        )
+                        driver.execute_script("arguments[0].click();", botao_filtrar)
 
-                time.sleep(6) 
-                print(f"Filtro reaplicado para a opção: {escolha_usuario}")
-            else:
+
+                        print(f"Filtro reaplicado para a opção: {escolha_usuario}")
+                        break
+                except StaleElementReferenceException:
+                    print("Elemento ficou obsoleto, tentando recapturar o elemento...")
+                    # Recarregar o elemento
+                    container_opcoes = WebDriverWait(driver, 20).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, ".k-reset.k-multicheck-wrap"))
+                    )
+                    lista_opcoes = container_opcoes.find_elements(By.CLASS_NAME, "k-item")
+                    continue
+
+            if not opcao_encontrada:
                 print(f"Opção '{escolha_usuario}' não encontrada durante a reaplicação do filtro.")
+
+        except StaleElementReferenceException as e:
+            print("Elemento desatualizado, recarregando a página e tentando novamente.")
+            
+            # Recarrega a página para garantir que o DOM esteja atualizado
+            driver.refresh()  
+            time.sleep(5)  # Esperar a página recarregar completamente
+            reaplicar_filtro(driver)  # Tentar reaplicar o filtro novamente
 
         except Exception as e:
             print(f"Erro ao reaplicar o filtro: {e}")
+
 
 
 def coletar_primeiro_detalhe():
