@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from selenium.common.exceptions import StaleElementReferenceException
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
+from selenium.webdriver.chrome.options import Options
 import time
 import gspread
 import signal
@@ -15,9 +16,8 @@ import os
 
 
 options = webdriver.ChromeOptions()
-options.add_argument("--disable-popup-blocking")
+options.add_argument("--disable-gpu") 
 options.add_argument("--headless")  
-options.add_argument("--blink-settings=imagesEnabled=false")
 driver = webdriver.Chrome(options=options)
 
 
@@ -30,17 +30,17 @@ driver.get("https://auction.cosl.org/Auctions/ListingsView")
 def autenticar_google_sheets():
     
     credentials_info = {
-            "type": os.getenv("GOOGLE_TYPE"),
-            "project_id": os.getenv("GOOGLE_PROJECT_ID"),
-            "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
-            "private_key": os.getenv("GOOGLE_PRIVATE_KEY").replace("\\n", "\n"),  
-            "client_email": os.getenv("GOOGLE_CLIENT_EMAIL"),
-            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-            "auth_uri": os.getenv("GOOGLE_AUTH_URI"),
-            "token_uri": os.getenv("GOOGLE_TOKEN_URI"),
-            "auth_provider_x509_cert_url": os.getenv("GOOGLE_AUTH_PROVIDER_CERT_URL"),
-            "client_x509_cert_url": os.getenv("GOOGLE_CLIENT_CERT_URL"),
-            "universe_domain": os.getenv("GOOGLE_UNIVERSE_DOMAIN")
+        "type": os.getenv("GOOGLE_TYPE"),
+        "project_id": os.getenv("GOOGLE_PROJECT_ID"),
+        "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
+        "private_key": os.getenv("GOOGLE_PRIVATE_KEY").replace("\\n", "\n"),  
+        "client_email": os.getenv("GOOGLE_CLIENT_EMAIL"),
+        "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+        "auth_uri": os.getenv("GOOGLE_AUTH_URI"),
+        "token_uri": os.getenv("GOOGLE_TOKEN_URI"),
+        "auth_provider_x509_cert_url": os.getenv("GOOGLE_AUTH_PROVIDER_CERT_URL"),
+        "client_x509_cert_url": os.getenv("GOOGLE_CLIENT_CERT_URL"),
+        "universe_domain": os.getenv("GOOGLE_UNIVERSE_DOMAIN")
     }
 
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
@@ -59,6 +59,7 @@ def salvar_em_google_sheets(data, nome_planilha, nome_aba):
         
         planilha = cliente.open(nome_planilha)
         
+        
         try:
             aba = planilha.worksheet(nome_aba)
         except gspread.exceptions.WorksheetNotFound:
@@ -69,10 +70,9 @@ def salvar_em_google_sheets(data, nome_planilha, nome_aba):
             valores = [list(item.values()) for item in data]  
             
             existing_data = aba.get_all_values()
-            
-            if not existing_data:  
-                aba.append_row(headers)
-                print("Cabeçalhos adicionados à planilha.")
+             
+            aba.append_row(headers)
+            print("Cabeçalhos adicionados à planilha.")
 
 
             existing_records = set(tuple(row) for row in existing_data[1:])  
@@ -149,19 +149,29 @@ def processar_listagens(driver):
             
             while True: 
                 try:
-                    bid_buttons = WebDriverWait(driver, 40).until(
-                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
-                    )
+                    bid_buttons = WebDriverWait(driver, 50).until(
+                            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
+                             )
+                       
                     bid_buttons = [btn for btn in bid_buttons if btn.is_displayed() and btn.is_enabled()]
 
                     for index in range(len(bid_buttons)):
                         try:
+                            time.sleep(3)
+
+                            bid_buttons = WebDriverWait(driver, 50).until(
+                            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1"))
+                             )
+                            
+                            bid_buttons = [btn for btn in bid_buttons if btn.is_displayed() and btn.is_enabled()]
+
                             bid_button = bid_buttons[index]
-                            clicar_no_elemento_com_javascript(bid_button) 
+
+                            clicar_no_elemento_com_javascript(bid_button)
                             
                             print(f"Processando o item {index + 1} de {len(bid_buttons)}")
                             
-                            time.sleep(3) 
+                            time.sleep(6) 
 
                             dados_item = coletar_primeiro_detalhe()
 
@@ -197,7 +207,8 @@ def processar_listagens(driver):
                                 print("Botão 'View on DataScoutPro' não encontrado a tempo.")
 
                             driver.back()
-                            driver.refresh()
+                            WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".k-button.k-button-icontext.ml-1")))
+
                             reaplicar_filtro(driver)
 
                         except (TimeoutException, NoSuchElementException, ElementClickInterceptedException, StaleElementReferenceException) as e:
@@ -231,27 +242,23 @@ def reaplicar_filtro(driver):
 
     if escolha_usuario:
         try:
-            # Localizar o botão de filtro e clicar
             filtro_btn = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CLASS_NAME, "k-grid-filter"))
             )
             driver.execute_script("arguments[0].click();", filtro_btn)
 
-            time.sleep(2)  # Pequeno delay para garantir o carregamento do DOM
+            time.sleep(2)  
 
-            # Esperar o container de opções ficar visível
             container_opcoes = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".k-reset.k-multicheck-wrap"))
             )
             print("Container de opções carregado.")
 
-            # Localizar todas as opções disponíveis
             lista_opcoes = container_opcoes.find_elements(By.CLASS_NAME, "k-item")
             print(f"Total de opções encontradas: {len(lista_opcoes)}")
 
             opcao_encontrada = False
 
-            # Procurar a opção desejada pelo valor do checkbox
             for item in lista_opcoes:
                 try:
                     checkbox = item.find_element(By.CSS_SELECTOR, "input.k-checkbox")
@@ -261,15 +268,12 @@ def reaplicar_filtro(driver):
                         opcao_encontrada = True
                         print(f"Selecionando a opção: {valor_checkbox}")
 
-                        # Redescobrir o elemento antes de clicar para evitar o erro de "stale element"
                         checkbox = WebDriverWait(driver, 10).until(
                             EC.presence_of_element_located((By.CSS_SELECTOR, f"input[value='{valor_checkbox}']"))
                         )
                         
-                        # Clicar no checkbox
                         driver.execute_script("arguments[0].click();", checkbox)
-                        
-                        # Clicar no botão de aplicar filtro
+           
                         botao_filtrar = WebDriverWait(driver, 10).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.k-primary"))
                         )
@@ -277,10 +281,9 @@ def reaplicar_filtro(driver):
 
 
                         print(f"Filtro reaplicado para a opção: {escolha_usuario}")
-                        break
+                        continue
                 except StaleElementReferenceException:
                     print("Elemento ficou obsoleto, tentando recapturar o elemento...")
-                    # Recarregar o elemento
                     container_opcoes = WebDriverWait(driver, 20).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, ".k-reset.k-multicheck-wrap"))
                     )
@@ -292,15 +295,13 @@ def reaplicar_filtro(driver):
 
         except StaleElementReferenceException as e:
             print("Elemento desatualizado, recarregando a página e tentando novamente.")
-            
-            # Recarrega a página para garantir que o DOM esteja atualizado
+    
             driver.refresh()  
-            time.sleep(5)  # Esperar a página recarregar completamente
-            reaplicar_filtro(driver)  # Tentar reaplicar o filtro novamente
+            time.sleep(5)  
+            reaplicar_filtro(driver)  
 
         except Exception as e:
             print(f"Erro ao reaplicar o filtro: {e}")
-
 
 
 def coletar_primeiro_detalhe():
@@ -312,30 +313,40 @@ def coletar_primeiro_detalhe():
 
         dl_elements = soup.find_all('dl', class_='row row-border-bottom p-1 m-1')
 
-    
-        if len(dl_elements) >= 2:
+        if len(dl_elements) >= 5:
             segundo_dl = dl_elements[1]  
+            quinto_dl = dl_elements[4]  
 
-            dt_elements = segundo_dl.find_all('dt')  
-            dd_elements = segundo_dl.find_all('dd')  
+            def processar_dl(dl):
+                dt_elements = dl.find_all('dt')
+                dd_elements = dl.find_all('dd')
+                dados = {}
 
-            for dt, dd in zip(dt_elements, dd_elements):
-                chave = dt.get_text(strip=True) 
-                valor = dd.get_text(strip=True) 
-                
-                if chave and chave not in dados_item:
-                    dados_item[chave] = valor
+                for dt, dd in zip(dt_elements, dd_elements):
+                    chave = dt.get_text(strip=True)
+                    valor = dd.get_text(strip=True)
+
+                    if chave and chave not in dados_item:  
+                        dados[chave] = valor
+                return dados
+
+            dados_segundo_dl = processar_dl(segundo_dl)
+            dados_quinto_dl = processar_dl(quinto_dl)
+
+            dados_item.update(dados_segundo_dl)
+            dados_item.update(dados_quinto_dl)
+
             if dados_item:   
-                print("Dados da primeira pagina coletados com sucesso !")
+                print("Dados da primeira página coletados com sucesso!")
                 return dados_item
             else: 
-                print("Nenhum detalhe encontrado na primeira pagina. ")
-
+                print("Nenhum detalhe encontrado na primeira página.")
         else:
-            print("O segunda tabela não foi encontrada.")
+            print("As tabelas segunda e/ou quinta não foram encontradas.")
 
     except Exception as e:
         print(f"Erro ao coletar o primeiro detalhe: {e}")
+
 
 def coletar_detalhes(dados_item):
     try:
