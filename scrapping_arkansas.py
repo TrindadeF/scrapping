@@ -53,44 +53,55 @@ def autenticar_google_sheets():
 def clicar_no_elemento_com_javascript(elemento):
     driver.execute_script("arguments[0].scrollIntoView(); arguments[0].click();", elemento)
 
+def buscar_planilha_por_nome(drive_service, condado):
+    query = f"mimeType='application/vnd.google-apps.spreadsheet' and name='{condado}' and trashed=false"
+    results = drive_service.files().list(q=query, spaces='drive', fields="files(id, name)").execute()
+    items = results.get('files', [])
+    
+    if not items:
+        print(f"Nenhuma planilha encontrada para o condado '{condado}'")
+        return None
+    else:
+        print(f"Planilha '{items[0]['name']}' encontrada.")
+        return items[0]['id']  
 def salvar_em_google_sheets(data, nome_planilha, nome_aba):
     try:
         cliente = autenticar_google_sheets()  
-        
-        planilha = cliente.open(nome_planilha)
-        
+        if cliente is None:
+            print("Falha ao autenticar no Google Sheets. Não é possível salvar os dados.")
+            return
         
         try:
-            aba = planilha.worksheet(nome_aba)
+            pasta_projeto = cliente.open(nome_planilha.strip())  
+        except gspread.exceptions.SpreadsheetNotFound:
+            print(f"Planilha '{nome_planilha}' não encontrada.")
+            return
+
+        try:
+            aba = pasta_projeto.worksheet(nome_aba.strip())  
+            print(f"Aba '{nome_aba}' já existe. Atualizando dados...")
         except gspread.exceptions.WorksheetNotFound:
-            aba = planilha.add_worksheet(title=nome_aba, rows="100", cols="20")
-        
+            aba = pasta_projeto.add_worksheet(title=nome_aba.strip(), rows="100", cols="20")
+            print(f"Aba '{nome_aba}' criada com sucesso.")
+
         if data:
             headers = list(data[0].keys())  
-            valores = [list(item.values()) for item in data]  
-            
-            existing_data = aba.get_all_values()
-             
-            aba.append_row(headers)
-            print("Cabeçalhos adicionados à planilha.")
+            valores = [list(item.values()) for item in data] 
 
-
-            existing_records = set(tuple(row) for row in existing_data[1:])  
-        
-            new_data = []
-            for item in valores:
-                if tuple(item) not in existing_records:
-                    new_data.append(item)
-
-            if new_data:
-                aba.append_rows(new_data)
-                print(f"Dados novos enviados para a aba '{nome_aba}' na planilha '{nome_planilha}' com sucesso.")
+            existing_data = aba.get_all_values()  
+       
+            if len(existing_data) == 0:
+                aba.append_row(headers) 
             else:
-                print("Nenhum dado novo para adicionar; todos os dados já estão na planilha.")
-    
+                range_name = 'A1:' + chr(64 + len(headers)) + '1'
+                aba.update(range_name=range_name, values=[headers])  
+                
+            aba.append_rows(valores)  
+            print(f"Dados adicionados na aba '{nome_aba}'.")
+        else:
+            print("Nenhum dado a ser salvo.")
     except Exception as e:
         print(f"Erro ao salvar dados no Google Sheets: {e}")
-
 
 
 def processar_listagens(driver):
@@ -252,10 +263,8 @@ def reaplicar_filtro(driver):
             container_opcoes = WebDriverWait(driver, 20).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".k-reset.k-multicheck-wrap"))
             )
-            print("Container de opções carregado.")
 
             lista_opcoes = container_opcoes.find_elements(By.CLASS_NAME, "k-item")
-            print(f"Total de opções encontradas: {len(lista_opcoes)}")
 
             opcao_encontrada = False
 
@@ -420,16 +429,23 @@ def coletar_detalhes(dados_item):
 
 
 def interromper_script(signal, frame):
-    print("\nInterrupção recebida! Salvando dados coletados...")
-    salvar_em_google_sheets(dados_coletados, " Taxes Deed Research GoogleSheet ", "Arkansas")
-    print("Dados salvos. Encerrando o script.")
-    driver.quit()
-    sys.exit(0)
+    try:
+        print("\nInterrupção recebida! Salvando dados coletados...")
+
+        salvar_em_google_sheets(dados_coletados, escolha_usuario, "Dados_Atualizados") 
+        
+        print(f"Dados salvos para o condado {escolha_usuario}. Encerrando o script.")
+    except Exception as e:
+        print(f"Erro ao salvar os dados: {str(e)}")
+    finally:
+        driver.quit()
+        sys.exit()
+
 
 signal.signal(signal.SIGINT, interromper_script)
 
 processar_listagens(driver)
 
-salvar_em_google_sheets(dados_coletados, " Taxes Deed Research GoogleSheet ", "Arkansas")
+salvar_em_google_sheets(dados_coletados, escolha_usuario, "Dados_Atualizados")
 
 driver.quit()
